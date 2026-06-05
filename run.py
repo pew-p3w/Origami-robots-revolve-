@@ -605,7 +605,6 @@ def _validate_resumable_snapshot(
         "population_fitnesses",
         "training_ball_poses",
         "rng_state",
-        "parent_selector_rng_state",
         "reproducer_rng_state",
         "best_ever_parameters",
         "best_ever_fitness",

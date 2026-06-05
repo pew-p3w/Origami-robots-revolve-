@@ -45,14 +45,37 @@ class Genotype:
         return Genotype(np.clip(new_params, -1.0, 1.0))
 
     @classmethod
-    def crossover(cls, parent1: Genotype, parent2: Genotype, rng: np.random.Generator) -> Genotype:
+    def one_point_crossover(
+        cls,
+        parent1: Genotype,
+        parent2: Genotype,
+        rng: np.random.Generator,
+    ) -> tuple[Genotype, Genotype]:
         """
-        Perform uniform crossover between two parent genotypes.
+        Perform one-point crossover and return two child genotypes.
 
         :param parent1: First parent.
         :param parent2: Second parent.
         :param rng: Random number generator.
-        :returns: A new child genotype.
+        :returns: Two new child genotypes.
+        :raises ValueError: If parent lengths differ.
         """
-        mask = rng.random(len(parent1.parameters)) < 0.5
-        return Genotype(np.where(mask, parent1.parameters, parent2.parameters))
+        if len(parent1.parameters) != len(parent2.parameters):
+            raise ValueError("Cannot crossover genotypes with different lengths.")
+        if len(parent1.parameters) < 2:
+            return parent1.copy(), parent2.copy()
+
+        crossover_point = int(rng.integers(1, len(parent1.parameters)))
+        child1 = np.concatenate(
+            [
+                parent1.parameters[:crossover_point],
+                parent2.parameters[crossover_point:],
+            ]
+        )
+        child2 = np.concatenate(
+            [
+                parent2.parameters[:crossover_point],
+                parent1.parameters[crossover_point:],
+            ]
+        )
+        return Genotype(child1), Genotype(child2)

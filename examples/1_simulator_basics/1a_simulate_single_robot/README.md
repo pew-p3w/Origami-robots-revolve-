@@ -72,8 +72,8 @@ config file, but the structure is intentionally the same:
   `MIN_TRAINING_BALL_DISTANCE_FRACTION`.
 - Brain feedback settings: live ball-position feedback input count, output
   scale, and distance scale.
-- EA settings: population size, parent fraction, crossover probability,
-  tournament size, number of generations, and mutation standard deviation.
+- EA settings: population size, tournament size, number of generations, and
+  mutation standard deviation.
 - Simulation settings: simulation time, number of parallel simulators, and
   headless mode.
 - Helper functions: `parameter_filename()`, `make_terrain()`,
@@ -103,8 +103,8 @@ offsets to the CPG outputs.
 
 `genotype.py`  
 Defines the flat parameter vector used by the EA. It provides random
-initialization, copying, uniform crossover, and Gaussian mutation with clipping
-to `[-1.0, 1.0]`.
+initialization, copying, one-point crossover that returns two children, and
+Gaussian mutation with clipping to `[-1.0, 1.0]`.
 
 `test_best.py`  
 Legacy visual test script for this folder. The preferred visual test path is now
@@ -133,13 +133,18 @@ positions.
 
 ## Evolution
 
-The EA is generational:
+The EA is generational. For each next-generation slot, reproduction follows the
+supervisor-specified tournament-clone procedure:
 
 - The current population is re-evaluated each generation.
-- A mating pool of `POPULATION_SIZE * PARENT_FRACTION` individuals is selected.
-- Each mating-pool slot is filled by tournament selection.
-- Offspring are produced by crossover or parent copying, followed by mutation.
-- The next generation is entirely the offspring population.
+- Randomly select `TOURNAMENT_SIZE` genotypes from the current population.
+- Select the genotype with the highest fitness as the tournament winner.
+- Duplicate the winner into two clone genotypes.
+- Apply one-point crossover to the two clones, producing two child genotypes.
+- Randomly keep one of the two children.
+- Mutate the kept child with Gaussian mutation.
+- Repeat until the next generation has `POPULATION_SIZE` genotypes.
+- The next generation is entirely the newly produced offspring population.
 - The best-ever individual is tracked for saving/logging, but is not inserted
   into the next generation as an elite unless it is recreated by reproduction.
 

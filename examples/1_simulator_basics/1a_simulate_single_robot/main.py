@@ -14,12 +14,11 @@ from typing import Any
 import numpy as np
 from genotype import Genotype
 
-from revolve2.experimentation.evolution.abstract_elements import Reproducer, Selector
 from revolve2.experimentation.logging import setup_logging
 from revolve2.experimentation.rng import make_rng_time_seed
 
 
-CHECKPOINT_VERSION = 2
+CHECKPOINT_VERSION = 3
 GENERATION_SNAPSHOT_VERSION = 1
 CONFIG_PATH_ENV = "REVOLVE2_RUN_CONFIG_PATH"
 MAIN_PATH_ENV = "REVOLVE2_RUN_MAIN_PATH"
@@ -70,42 +69,8 @@ class Individual:
         self.fitness = fitness
 
 
-class ParentSelector(Selector):
-    """Selects a mating pool via tournament selection."""
-
-    _rng: np.random.Generator
-
-    def __init__(self) -> None:
-        """Initialize the selector."""
-        self._rng = make_rng_time_seed()
-
-    def select(
-        self, population: list[Individual], **kwargs: Any
-    ) -> tuple[list[Individual], dict[str, Any]]:
-        """
-        Select a mating pool using tournament selection.
-
-        :param population: Current population.
-        :param kwargs: Unused.
-        :returns: Mating pool and an empty kwargs dict.
-        """
-        mating_pool_size = max(
-            1,
-            int(config.POPULATION_SIZE * config.PARENT_FRACTION),
-        )
-        selected_indices = [
-            _tournament(
-                self._rng,
-                [individual.fitness for individual in population],
-                k=config.TOURNAMENT_SIZE,
-            )
-            for _ in range(mating_pool_size)
-        ]
-        return [population[index] for index in selected_indices], {}
-
-
-class CrossoverReproducer(Reproducer):
-    """Produces offspring via crossover and mutation."""
+class TournamentCloneReproducer:
+    """Produces offspring from tournament-winning clone crossover and mutation."""
 
     _rng: np.random.Generator
 
@@ -113,48 +78,34 @@ class CrossoverReproducer(Reproducer):
         """Initialize the reproducer."""
         self._rng = make_rng_time_seed()
 
-    def reproduce(self, mating_pool: list[Individual], **kwargs: Any) -> list[Genotype]:
+    def reproduce(self, population: list[Individual]) -> list[Genotype]:
         """
-        Create a full replacement population from the mating pool.
+        Create a full replacement population using tournament selection.
 
-        :param mating_pool: Selected parents.
-        :param kwargs: Unused.
+        :param population: Evaluated current population.
         :returns: New child genotypes of size config.POPULATION_SIZE.
-        :raises ValueError: If the mating pool is empty.
+        :raises ValueError: If the population is empty.
         """
-        if len(mating_pool) == 0:
-            raise ValueError("Mating pool cannot be empty.")
+        if len(population) == 0:
+            raise ValueError("Population cannot be empty.")
 
         children = []
         while len(children) < config.POPULATION_SIZE:
-            parent1, parent2 = self._choose_parents(mating_pool)
-            if self._rng.random() < config.CROSSOVER_PROBABILITY:
-                child = Genotype.crossover(
-                    parent1.genotype,
-                    parent2.genotype,
+            winner = population[
+                _tournament(
                     self._rng,
+                    [individual.fitness for individual in population],
+                    k=config.TOURNAMENT_SIZE,
                 )
-            else:
-                child = (
-                    parent1 if self._rng.random() < 0.5 else parent2
-                ).genotype.copy()
+            ]
+            child1, child2 = Genotype.one_point_crossover(
+                winner.genotype.copy(),
+                winner.genotype.copy(),
+                self._rng,
+            )
+            child = child1 if self._rng.random() < 0.5 else child2
             children.append(child.mutate(self._rng, config.MUTATE_STD))
         return children
-
-    def _choose_parents(
-        self, mating_pool: list[Individual]
-    ) -> tuple[Individual, Individual]:
-        """
-        Choose two parents from the mating pool.
-
-        :param mating_pool: Selected parents.
-        :returns: Two parent individuals.
-        """
-        if len(mating_pool) == 1:
-            return mating_pool[0], mating_pool[0]
-
-        parent_indices = self._rng.choice(len(mating_pool), size=2, replace=False)
-        return mating_pool[int(parent_indices[0])], mating_pool[int(parent_indices[1])]
 
 
 def _tournament(rng: np.random.Generator, fitnesses: list[float], k: int) -> int:
@@ -199,16 +150,12 @@ def main() -> None:
     num_params = evaluator.num_parameters
     logging.info(f"Controller has {num_params} parameters to optimize.")
 
-    parent_selector = ParentSelector()
-    reproducer = CrossoverReproducer()
+    reproducer = TournamentCloneReproducer()
 
     if checkpoint_path is not None and os.path.exists(checkpoint_path):
         checkpoint = _load_checkpoint(checkpoint_path)
         _validate_checkpoint(checkpoint, num_params)
         rng = _rng_from_state(checkpoint["rng_state"])
-        parent_selector._rng.bit_generator.state = checkpoint[
-            "parent_selector_rng_state"
-        ]
         reproducer._rng.bit_generator.state = checkpoint["reproducer_rng_state"]
         csv_path = checkpoint["csv_path"]
         save_path = checkpoint["save_path"]
@@ -272,7 +219,6 @@ def main() -> None:
                 best_ever=best_ever,
                 training_ball_poses=training_ball_poses,
                 rng=rng,
-                parent_selector=parent_selector,
                 reproducer=reproducer,
                 csv_path=csv_path,
                 save_path=save_path,
@@ -292,8 +238,7 @@ def main() -> None:
             for individual, fitness in zip(population, parent_fitnesses)
         ]
 
-        mating_pool, _ = parent_selector.select(population)
-        offspring_genotypes = reproducer.reproduce(mating_pool)
+        offspring_genotypes = reproducer.reproduce(population)
         offspring_fitnesses = evaluator.evaluate_on_ball_poses(
             offspring_genotypes,
             training_ball_poses,
@@ -332,7 +277,6 @@ def main() -> None:
                 population=population,
                 training_ball_poses=training_ball_poses,
                 rng=rng,
-                parent_selector=parent_selector,
                 reproducer=reproducer,
                 best_parent_fitness=max(parent_fitnesses),
                 best_offspring_fitness=max(offspring_fitnesses),
@@ -349,7 +293,6 @@ def main() -> None:
                 best_ever=best_ever,
                 training_ball_poses=training_ball_poses,
                 rng=rng,
-                parent_selector=parent_selector,
                 reproducer=reproducer,
                 csv_path=csv_path,
                 save_path=save_path,
@@ -388,8 +331,7 @@ def _save_checkpoint(
     best_ever: Individual,
     training_ball_poses: list[Any],
     rng: np.random.Generator,
-    parent_selector: ParentSelector,
-    reproducer: CrossoverReproducer,
+    reproducer: TournamentCloneReproducer,
     csv_path: str,
     save_path: str,
     num_params: int,
@@ -403,7 +345,6 @@ def _save_checkpoint(
     :param best_ever: Best individual found so far.
     :param training_ball_poses: Fixed training ball poses.
     :param rng: Main random number generator.
-    :param parent_selector: Parent selector with RNG state.
     :param reproducer: Reproducer with RNG state.
     :param csv_path: Path to run CSV.
     :param save_path: Path to best-ever npy file.
@@ -424,7 +365,6 @@ def _save_checkpoint(
         "best_ever_fitness": float(best_ever.fitness),
         "training_ball_poses": training_ball_poses,
         "rng_state": rng.bit_generator.state,
-        "parent_selector_rng_state": parent_selector._rng.bit_generator.state,
         "reproducer_rng_state": reproducer._rng.bit_generator.state,
         "csv_path": csv_path,
         "save_path": save_path,
@@ -432,8 +372,6 @@ def _save_checkpoint(
         "config": {
             "test_file": config.TEST_FILE,
             "population_size": config.POPULATION_SIZE,
-            "parent_fraction": config.PARENT_FRACTION,
-            "crossover_probability": config.CROSSOVER_PROBABILITY,
             "tournament_size": config.TOURNAMENT_SIZE,
             "num_generations": config.NUM_GENERATIONS,
             "num_training_ball_poses": config.NUM_TRAINING_BALL_POSES,
@@ -462,8 +400,7 @@ def _save_generation_snapshot(
     population: list[Individual],
     training_ball_poses: list[Any],
     rng: np.random.Generator,
-    parent_selector: ParentSelector,
-    reproducer: CrossoverReproducer,
+    reproducer: TournamentCloneReproducer,
     best_parent_fitness: float,
     best_offspring_fitness: float,
     best_ever: Individual,
@@ -479,7 +416,6 @@ def _save_generation_snapshot(
     :param population: Current generation population.
     :param training_ball_poses: Fixed training ball poses.
     :param rng: Main random number generator.
-    :param parent_selector: Parent selector with RNG state.
     :param reproducer: Reproducer with RNG state.
     :param best_parent_fitness: Best fitness before replacement.
     :param best_offspring_fitness: Best fitness among children.
@@ -509,7 +445,6 @@ def _save_generation_snapshot(
         ],
         "training_ball_poses": training_ball_poses,
         "rng_state": rng.bit_generator.state,
-        "parent_selector_rng_state": parent_selector._rng.bit_generator.state,
         "reproducer_rng_state": reproducer._rng.bit_generator.state,
         "best_parameters": best.genotype.parameters.copy(),
         "best_fitness": float(best.fitness),
@@ -751,8 +686,6 @@ def _config_values() -> dict[str, Any]:
         "test_file": config.TEST_FILE,
         "parameter_filename": config.parameter_filename(),
         "population_size": config.POPULATION_SIZE,
-        "parent_fraction": config.PARENT_FRACTION,
-        "crossover_probability": config.CROSSOVER_PROBABILITY,
         "tournament_size": config.TOURNAMENT_SIZE,
         "num_generations": config.NUM_GENERATIONS,
         "num_training_ball_poses": config.NUM_TRAINING_BALL_POSES,
