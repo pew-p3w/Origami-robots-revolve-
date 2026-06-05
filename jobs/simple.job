@@ -1,0 +1,45 @@
+#!/bin/bash
+
+#SBATCH --account=compsci
+#SBATCH --partition=ada
+#SBATCH --nodes=1 --ntasks=26
+#SBATCH --time=80:00:00
+#SBATCH --job-name="simple"
+#SBATCH --output=jobs/logs/simple.out
+#SBATCH --error=jobs/logs/simple.err
+#SBATCH --mail-user=ngdphi001@myuct.ac.za
+#SBATCH --mail-type=BEGIN,END,FAIL
+
+set -euo pipefail
+
+REPO_DIR="${SLURM_SUBMIT_DIR:-/scratch/${USER}/revolve2-folding}"
+cd "$REPO_DIR"
+
+module load python/miniconda3-py3.12
+
+CONDA_ENV="/scratch/${USER}/revolve2_env"
+if [ ! -d "$CONDA_ENV" ]; then
+    echo "Missing conda environment: $CONDA_ENV" >&2
+    echo "Create it before submitting this job." >&2
+    exit 1
+fi
+
+CONDA_BASE="$(conda info --base)"
+source "$CONDA_BASE/etc/profile.d/conda.sh"
+conda activate "$CONDA_ENV"
+
+export MUJOCO_GL=egl
+export OMP_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
+
+echo "Running on host: $(hostname)"
+echo "Job ID: ${SLURM_JOB_ID:-unknown}"
+echo "SLURM_NTASKS: ${SLURM_NTASKS:-unknown}"
+echo "Python: $(python --version)"
+
+python run.py \
+    -r config/1_examples/simple.py \
+    examples/1_simulator_basics/1a_simulate_single_robot \
+    output/simple2
