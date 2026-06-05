@@ -42,4 +42,4 @@ echo "Python: $(python --version)"
 python run.py \
     -r config/1_examples/spider.py \
     examples/1_simulator_basics/1a_simulate_single_robot \
-    output/spider3
+    output/spider4

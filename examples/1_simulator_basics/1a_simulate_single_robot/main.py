@@ -104,7 +104,13 @@ class TournamentCloneReproducer:
                 self._rng,
             )
             child = child1 if self._rng.random() < 0.5 else child2
-            children.append(child.mutate(self._rng, config.MUTATE_STD))
+            children.append(
+                child.mutate(
+                    self._rng,
+                    config.MUTATE_STD,
+                    config.MUTATION_PROBABILITY,
+                )
+            )
         return children
 
 
@@ -382,6 +388,7 @@ def _save_checkpoint(
             ),
             "simulation_time": config.SIMULATION_TIME,
             "mutate_std": config.MUTATE_STD,
+            "mutation_probability": config.MUTATION_PROBABILITY,
         },
     }
     temp_path = f"{checkpoint_path}.tmp"
@@ -696,6 +703,7 @@ def _config_values() -> dict[str, Any]:
         ),
         "simulation_time": config.SIMULATION_TIME,
         "mutate_std": config.MUTATE_STD,
+        "mutation_probability": config.MUTATION_PROBABILITY,
         "num_simulators": config.NUM_SIMULATORS,
         "headless": config.HEADLESS,
         "ball_radius": config.BALL_RADIUS,

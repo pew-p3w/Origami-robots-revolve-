@@ -33,15 +33,31 @@ class Genotype:
         """
         return Genotype(rng.random(size=num_parameters) * 2 - 1)
 
-    def mutate(self, rng: np.random.Generator, mutate_std: float) -> Genotype:
+    def mutate(
+        self,
+        rng: np.random.Generator,
+        mutate_std: float,
+        mutation_probability: float,
+    ) -> Genotype:
         """
-        Mutate this genotype by adding gaussian noise.
+        Mutate this genotype by adding gaussian noise to selected genes.
 
         :param rng: Random number generator.
         :param mutate_std: Standard deviation of the gaussian noise.
+        :param mutation_probability: Independent mutation chance for each gene.
         :returns: A mutated copy.
+        :raises ValueError: If mutation_probability is outside [0.0, 1.0].
         """
-        new_params = self.parameters + rng.normal(scale=mutate_std, size=len(self.parameters))
+        if not 0.0 <= mutation_probability <= 1.0:
+            raise ValueError("mutation_probability must be between 0.0 and 1.0.")
+
+        mutation_mask = rng.random(size=len(self.parameters)) < mutation_probability
+        new_params = self.parameters.copy()
+        if np.any(mutation_mask):
+            new_params[mutation_mask] += rng.normal(
+                scale=mutate_std,
+                size=int(np.count_nonzero(mutation_mask)),
+            )
         return Genotype(np.clip(new_params, -1.0, 1.0))
 
     @classmethod

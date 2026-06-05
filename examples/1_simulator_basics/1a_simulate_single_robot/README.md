@@ -72,8 +72,8 @@ config file, but the structure is intentionally the same:
   `MIN_TRAINING_BALL_DISTANCE_FRACTION`.
 - Brain feedback settings: live ball-position feedback input count, output
   scale, and distance scale.
-- EA settings: population size, tournament size, number of generations, and
-  mutation standard deviation.
+- EA settings: population size, tournament size, number of generations,
+  mutation standard deviation, and per-gene mutation probability.
 - Simulation settings: simulation time, number of parallel simulators, and
   headless mode.
 - Helper functions: `parameter_filename()`, `make_terrain()`,
@@ -104,7 +104,7 @@ offsets to the CPG outputs.
 `genotype.py`  
 Defines the flat parameter vector used by the EA. It provides random
 initialization, copying, one-point crossover that returns two children, and
-Gaussian mutation with clipping to `[-1.0, 1.0]`.
+per-gene Gaussian mutation with clipping to `[-1.0, 1.0]`.
 
 `test_best.py`  
 Legacy visual test script for this folder. The preferred visual test path is now
@@ -142,7 +142,9 @@ supervisor-specified tournament-clone procedure:
 - Duplicate the winner into two clone genotypes.
 - Apply one-point crossover to the two clones, producing two child genotypes.
 - Randomly keep one of the two children.
-- Mutate the kept child with Gaussian mutation.
+- Mutate each gene in the kept child independently with
+  `MUTATION_PROBABILITY`; selected genes receive Gaussian noise with standard
+  deviation `MUTATE_STD`.
 - Repeat until the next generation has `POPULATION_SIZE` genotypes.
 - The next generation is entirely the newly produced offspring population.
 - The best-ever individual is tracked for saving/logging, but is not inserted
