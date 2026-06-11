@@ -2,11 +2,11 @@
 
 #SBATCH --account=compsci
 #SBATCH --partition=ada
-#SBATCH --nodes=1 --ntasks=30
+#SBATCH --nodes=1 --ntasks=26
 #SBATCH --time=80:00:00
-#SBATCH --job-name="gecko"
-#SBATCH --output=jobs/logs/gecko.out
-#SBATCH --error=jobs/logs/gecko.err
+#SBATCH --job-name="ant"
+#SBATCH --output=jobs/logs/ant.out
+#SBATCH --error=jobs/logs/ant.err
 #SBATCH --mail-user=ngdphi001@myuct.ac.za
 #SBATCH --mail-type=BEGIN,END,FAIL
 
@@ -39,4 +39,7 @@ echo "Job ID: ${SLURM_JOB_ID:-unknown}"
 echo "SLURM_NTASKS: ${SLURM_NTASKS:-unknown}"
 echo "Python: $(python --version)"
 
-python run.py -c output/gecko4/gen88.pkl
+python run.py \
+    -r config/1_examples/ant.py \
+    examples/1_simulator_basics/1a_simulate_single_robot \
+    output/ant4

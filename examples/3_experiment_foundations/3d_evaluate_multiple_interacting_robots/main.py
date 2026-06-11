@@ -48,12 +48,15 @@ def main() -> None:
         scene.add_robot(robot, pose=pose)
 
     # Create the simulator.
+    # Visual simulations must use a single simulator worker.
     simulator = LocalSimulator(headless=False, num_simulators=1, viewer_type="native")
 
     # Simulate all scenes.
+    batch_parameters = make_standard_batch_parameters()
+    batch_parameters.simulation_time = 1000
     scene_states = simulate_scenes(
         simulator=simulator,
-        batch_parameters=make_standard_batch_parameters(),
+        batch_parameters=batch_parameters,
         scenes=scene,
     )
 

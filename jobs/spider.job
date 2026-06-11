@@ -2,7 +2,7 @@
 
 #SBATCH --account=compsci
 #SBATCH --partition=ada
-#SBATCH --nodes=1 --ntasks=26
+#SBATCH --nodes=1 --ntasks=25
 #SBATCH --time=80:00:00
 #SBATCH --job-name="spider"
 #SBATCH --output=jobs/logs/spider.out
@@ -39,7 +39,4 @@ echo "Job ID: ${SLURM_JOB_ID:-unknown}"
 echo "SLURM_NTASKS: ${SLURM_NTASKS:-unknown}"
 echo "Python: $(python --version)"
 
-python run.py \
-    -r config/1_examples/spider.py \
-    examples/1_simulator_basics/1a_simulate_single_robot \
-    output/spider4
+python run.py -c output/spider4/gen78.pkl

@@ -54,6 +54,12 @@ Test one saved generation visually:
 python run.py -t output/<run_name>/gen<N>.pkl
 ```
 
+Preview a body with one random controller:
+
+```bash
+python run.py --random-test config/1_examples/<body_config>.py
+```
+
 Export one CSV from all generation snapshots:
 
 ```bash
@@ -66,6 +72,8 @@ Configuration files live under `config/1_examples/`. Each body has its own
 config file, but the structure is intentionally the same:
 
 - `BODY`: the robot body used for the run.
+- Current configs cover the custom `simple` body plus the standard v2 bodies:
+  `gecko`, `spider`, `ant`, and `snake`.
 - Terrain and ball settings: terrain size, ball radius/mass, spawn margin, and
   reached-ball distance.
 - Training ball sampling: `NUM_TRAINING_BALL_POSES` and

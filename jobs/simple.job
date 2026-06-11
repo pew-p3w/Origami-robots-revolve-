@@ -2,7 +2,7 @@
 
 #SBATCH --account=compsci
 #SBATCH --partition=ada
-#SBATCH --nodes=1 --ntasks=26
+#SBATCH --nodes=1 --ntasks=10
 #SBATCH --time=80:00:00
 #SBATCH --job-name="simple"
 #SBATCH --output=jobs/logs/simple.out
@@ -39,7 +39,4 @@ echo "Job ID: ${SLURM_JOB_ID:-unknown}"
 echo "SLURM_NTASKS: ${SLURM_NTASKS:-unknown}"
 echo "Python: $(python --version)"
 
-python run.py \
-    -r config/1_examples/simple.py \
-    examples/1_simulator_basics/1a_simulate_single_robot \
-    output/simple4
+python run.py -c output/simple4/gen93.pkl

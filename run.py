@@ -44,9 +44,10 @@ def main() -> None:
         args.test is not None,
         args.output_csv is not None,
         args.continue_run is not None,
+        args.random_test is not None,
     ]
     if sum(selected) != 1:
-        raise SystemExit("Choose exactly one of -r, -t, -o, or -c.")
+        raise SystemExit("Choose exactly one of -r, -t, -o, -c, or --random-test.")
 
     if args.run is not None:
         config_path = _resolve_config_path(args.run[0])
@@ -57,8 +58,14 @@ def main() -> None:
         _run_test(_resolve_existing_file(args.test), viewer_type=args.viewer)
     elif args.output_csv is not None:
         _export_csv(_resolve_existing_dir(args.output_csv))
-    else:
+    elif args.continue_run is not None:
         _continue_training(_resolve_existing_file(args.continue_run))
+    else:
+        _run_random_test(
+            _resolve_config_path(args.random_test),
+            viewer_type=args.viewer,
+            simulation_time=args.random_test_time,
+        )
 
 
 def _parse_args() -> argparse.Namespace:
@@ -106,6 +113,20 @@ def _parse_args() -> argparse.Namespace:
         "--continue-run",
         metavar="GEN_PKL",
         help="Continue training from a resumable generation snapshot.",
+    )
+    parser.add_argument(
+        "--random-test",
+        metavar="CONFIG",
+        help=(
+            "Visually test a config with one random controller, for quickly "
+            "previewing body morphology."
+        ),
+    )
+    parser.add_argument(
+        "--random-test-time",
+        type=float,
+        default=120.0,
+        help="Simulation seconds for --random-test. Default: 120.",
     )
     return parser.parse_args()
 
@@ -307,8 +328,11 @@ def _run_test(snapshot_path: Path, viewer_type: str) -> None:
     :param snapshot_path: Snapshot pkl path.
     :param viewer_type: MuJoCo viewer implementation to use.
     """
+    print(f"Loading generation snapshot: {snapshot_path}", flush=True)
     snapshot = _load_snapshot(snapshot_path)
+    print("Installing snapshot config and module paths...", flush=True)
     _install_snapshot_environment(snapshot)
+    print("Snapshot environment ready. Starting test logging...", flush=True)
 
     from revolve2.experimentation.logging import setup_logging
 
@@ -437,6 +461,168 @@ def _run_test(snapshot_path: Path, viewer_type: str) -> None:
         logging.info(
             f"Reached ball threshold:          {config.BALL_REACHED_DISTANCE:.4f} m"
         )
+
+
+def _run_random_test(
+    config_path: Path,
+    viewer_type: str,
+    simulation_time: float,
+) -> None:
+    """
+    Test a config visually with a random controller.
+
+    :param config_path: Config file path.
+    :param viewer_type: MuJoCo viewer implementation to use.
+    :param simulation_time: Maximum simulation seconds.
+    """
+    main_path = (
+        _repo_root()
+        / "examples"
+        / "1_simulator_basics"
+        / "1a_simulate_single_robot"
+        / "main.py"
+    )
+    _install_config_environment(config_path, main_path)
+
+    from revolve2.experimentation.logging import setup_logging
+
+    setup_logging()
+    logging.info("Starting run.py random body test.")
+
+    import config
+    from ball_aware_brain import BallAwareCpgBrain, steering_parameter_count
+    from revolve2.ci_group.interactive_objects import Ball
+    from revolve2.ci_group.simulation_parameters import make_standard_batch_parameters
+    from revolve2.experimentation.rng import make_rng_time_seed
+    from revolve2.modular_robot import ModularRobot
+    from revolve2.modular_robot.body.base import ActiveHinge
+    from revolve2.modular_robot.brain.cpg import (
+        active_hinges_to_cpg_network_structure_neighbor,
+    )
+    from revolve2.modular_robot_simulation import (
+        ModularRobotScene,
+        StopOnRobotObjectDistance,
+        simulate_scenes,
+    )
+
+    logging.info("Importing MuJoCo simulator.")
+    from revolve2.simulators.mujoco_simulator import LocalSimulator
+
+    active_hinges = config.BODY.find_modules_of_type(ActiveHinge)
+    (
+        cpg_network_structure,
+        output_mapping,
+    ) = active_hinges_to_cpg_network_structure_neighbor(active_hinges)
+    num_parameters = cpg_network_structure.num_connections + steering_parameter_count(
+        output_mapping=output_mapping,
+        num_steering_inputs=config.FEEDBACK_NUM_INPUTS,
+    )
+
+    rng = make_rng_time_seed()
+    weights = rng.random(size=num_parameters) * 2.0 - 1.0
+    logging.info(f"Random test config: {config_path}")
+    logging.info(f"Body name: {config.TEST_FILE}")
+    logging.info(f"Active hinges: {len(active_hinges)}")
+    logging.info(f"Random controller parameters: {len(weights)}")
+
+    ball = Ball(
+        radius=config.BALL_RADIUS,
+        mass=config.BALL_MASS,
+        pose=config.make_random_ball_pose(rng),
+    )
+    logging.info(
+        f"Ball starts at x={ball.pose.position.x:.4f}, y={ball.pose.position.y:.4f}."
+    )
+
+    brain = BallAwareCpgBrain.from_params(
+        params=weights,
+        cpg_network_structure=cpg_network_structure,
+        initial_state_uniform=math.sqrt(2) * 0.5,
+        output_mapping=output_mapping,
+        ball=ball,
+        num_steering_inputs=config.FEEDBACK_NUM_INPUTS,
+        steering_output_scale=config.FEEDBACK_OUTPUT_SCALE,
+        distance_scale=config.FEEDBACK_DISTANCE_SCALE,
+    )
+    robot = ModularRobot(body=config.BODY, brain=brain)
+
+    scene = ModularRobotScene(terrain=config.make_terrain())
+    scene.add_robot(robot)
+    scene.add_interactive_object(ball)
+    scene.add_stop_condition(
+        StopOnRobotObjectDistance(
+            robot=robot,
+            obj=ball,
+            distance=config.BALL_REACHED_DISTANCE,
+        )
+    )
+
+    logging.info(f"Using {viewer_type} MuJoCo viewer.")
+    simulator = LocalSimulator(viewer_type=viewer_type)
+    batch_parameters = make_standard_batch_parameters()
+    batch_parameters.simulation_time = simulation_time
+
+    logging.info(f"Starting random visual simulation for up to {simulation_time} seconds.")
+    scene_states = simulate_scenes(
+        simulator=simulator,
+        batch_parameters=batch_parameters,
+        scenes=scene,
+    )
+    logging.info("Random visual simulation finished.")
+
+    robot_pos_start = (
+        scene_states[0].get_modular_robot_simulation_state(robot).get_pose().position
+    )
+    robot_pos_end = (
+        scene_states[-1].get_modular_robot_simulation_state(robot).get_pose().position
+    )
+    ball_pos_start = scene_states[0]._simulation_state.get_multi_body_system_pose(
+        ball
+    ).position
+    ball_pos_end = scene_states[-1]._simulation_state.get_multi_body_system_pose(
+        ball
+    ).position
+
+    initial_dist = math.sqrt(
+        (robot_pos_start.x - ball_pos_start.x) ** 2
+        + (robot_pos_start.y - ball_pos_start.y) ** 2
+    )
+    final_dist = math.sqrt(
+        (robot_pos_end.x - ball_pos_end.x) ** 2
+        + (robot_pos_end.y - ball_pos_end.y) ** 2
+    )
+
+    logging.info(f"Initial robot-to-ball distance: {initial_dist:.4f} m")
+    logging.info(f"Final   robot-to-ball distance: {final_dist:.4f} m")
+    logging.info(f"Distance improvement:           {initial_dist - final_dist:+.4f} m")
+    logging.info(
+        f"Normalized fitness for test:    "
+        f"{_normalized_distance_fitness(initial_dist, final_dist):.4f}"
+    )
+    if final_dist <= config.BALL_REACHED_DISTANCE:
+        logging.info(
+            f"Reached ball threshold:          {config.BALL_REACHED_DISTANCE:.4f} m"
+        )
+
+
+def _install_config_environment(config_path: Path, main_path: Path) -> None:
+    """
+    Install a config module by path for in-process visual tests.
+
+    :param config_path: Config file path.
+    :param main_path: Main example path used for import roots.
+    """
+    for path in _pythonpath_entries(config_path, main_path):
+        if path not in sys.path:
+            sys.path.insert(0, path)
+
+    sys.modules.pop("config", None)
+    config_module = types.ModuleType("config")
+    config_module.__file__ = str(config_path)
+    with open(config_path, "r", encoding="utf-8") as config_file:
+        source = config_file.read()
+    exec(compile(source, str(config_path), "exec"), config_module.__dict__)
+    sys.modules["config"] = config_module
 
 
 def _normalized_distance_fitness(initial_dist: float, final_dist: float) -> float:
