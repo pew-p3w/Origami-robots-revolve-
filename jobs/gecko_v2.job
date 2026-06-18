@@ -2,11 +2,11 @@
 
 #SBATCH --account=compsci
 #SBATCH --partition=ada
-#SBATCH --nodes=1 --ntasks=25
-#SBATCH --time=100:00:00
-#SBATCH --job-name="spider"
-#SBATCH --output=jobs/logs/spider.out
-#SBATCH --error=jobs/logs/spider.err
+#SBATCH --nodes=1 --ntasks=20
+#SBATCH --time=80:00:00
+#SBATCH --job-name="gecko_v2"
+#SBATCH --output=jobs/logs/gecko_v2.out
+#SBATCH --error=jobs/logs/gecko_v2.err
 #SBATCH --mail-user=ngdphi001@myuct.ac.za
 #SBATCH --mail-type=BEGIN,END,FAIL
 
@@ -39,4 +39,7 @@ echo "Job ID: ${SLURM_JOB_ID:-unknown}"
 echo "SLURM_NTASKS: ${SLURM_NTASKS:-unknown}"
 echo "Python: $(python --version)"
 
-python run.py -c output/spider4/gen100_extend200.pkl
+python run.py \
+    -r config/1_examples/gecko_v2.py \
+    examples/1_simulator_basics/1a_simulate_single_robot/main_v2.py \
+    output/gecko_v2

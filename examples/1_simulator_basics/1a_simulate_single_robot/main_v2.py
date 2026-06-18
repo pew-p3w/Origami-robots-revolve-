@@ -1,4 +1,4 @@
-"""EA optimization of CPG brain weights for the robot-to-ball task."""
+"""Experimental v2 EA optimization for the robot-to-ball task."""
 
 import csv
 import importlib.util
@@ -69,8 +69,8 @@ class Individual:
         self.fitness = fitness
 
 
-class TournamentCloneReproducer:
-    """Produces offspring from tournament-winning clone crossover and mutation."""
+class TopPoolCrossoverReproducer:
+    """Produces offspring from top-pool tournament crossover and mutation."""
 
     _rng: np.random.Generator
 
@@ -81,10 +81,10 @@ class TournamentCloneReproducer:
     def reproduce(
         self,
         population: list[Individual],
-        num_children: int | None = None,
+        num_children: int,
     ) -> list[Genotype]:
         """
-        Create a full replacement population using tournament selection.
+        Create children using tournament-selected distinct parents.
 
         :param population: Evaluated current population.
         :param num_children: Number of child genotypes to create.
@@ -93,20 +93,31 @@ class TournamentCloneReproducer:
         """
         if len(population) == 0:
             raise ValueError("Population cannot be empty.")
+        if num_children < 0:
+            raise ValueError("num_children cannot be negative.")
 
-        target_size = config.POPULATION_SIZE if num_children is None else num_children
+        parent_pool = _top_parent_pool(
+            population,
+            fraction=getattr(config, "TOP_SELECTION_FRACTION", 0.5),
+        )
         children = []
-        while len(children) < target_size:
-            winner = population[
-                _tournament(
-                    self._rng,
-                    [individual.fitness for individual in population],
-                    k=config.TOURNAMENT_SIZE,
-                )
-            ]
+        while len(children) < num_children:
+            parent1_index = _tournament(
+                self._rng,
+                [individual.fitness for individual in parent_pool],
+                k=config.TOURNAMENT_SIZE,
+            )
+            parent2_index = _tournament(
+                self._rng,
+                [individual.fitness for individual in parent_pool],
+                k=config.TOURNAMENT_SIZE,
+                exclude_index=parent1_index if len(parent_pool) > 1 else None,
+            )
+            parent1 = parent_pool[parent1_index]
+            parent2 = parent_pool[parent2_index]
             child1, child2 = Genotype.one_point_crossover(
-                winner.genotype.copy(),
-                winner.genotype.copy(),
+                parent1.genotype.copy(),
+                parent2.genotype.copy(),
                 self._rng,
             )
             child = child1 if self._rng.random() < 0.5 else child2
@@ -120,23 +131,57 @@ class TournamentCloneReproducer:
         return children
 
 
-def _tournament(rng: np.random.Generator, fitnesses: list[float], k: int) -> int:
+def _top_parent_pool(population: list[Individual], fraction: float) -> list[Individual]:
+    """
+    Select the top fitness slice used as the v2 tournament search space.
+
+    :param population: Evaluated current population.
+    :param fraction: Fraction of the population to keep.
+    :returns: The top-fitness individuals.
+    :raises ValueError: If fraction is not in (0.0, 1.0].
+    """
+    if not 0.0 < fraction <= 1.0:
+        raise ValueError("TOP_SELECTION_FRACTION must be in (0.0, 1.0].")
+    pool_size = max(2, int(len(population) * fraction))
+    pool_size = min(pool_size, len(population))
+    return sorted(
+        population,
+        key=lambda individual: individual.fitness,
+        reverse=True,
+    )[:pool_size]
+
+
+def _tournament(
+    rng: np.random.Generator,
+    fitnesses: list[float],
+    k: int,
+    exclude_index: int | None = None,
+) -> int:
     """
     Select the best individual from a random tournament.
 
     :param rng: Random number generator.
     :param fitnesses: Fitness values.
     :param k: Tournament size.
+    :param exclude_index: Optional index that cannot be selected.
     :returns: Winning index.
     """
-    participants = rng.choice(range(len(fitnesses)), size=k)
+    candidates = [
+        index
+        for index in range(len(fitnesses))
+        if exclude_index is None or index != exclude_index
+    ]
+    if len(candidates) == 0:
+        candidates = list(range(len(fitnesses)))
+    tournament_size = min(k, len(candidates))
+    participants = rng.choice(candidates, size=tournament_size, replace=False)
     return int(max(participants, key=lambda index: fitnesses[index]))
 
 
 def main() -> None:
     """Run the EA optimization loop."""
     setup_logging()
-    logging.info("Starting main.")
+    logging.info("Starting main_v2.")
     logging.info("Importing evaluator and MuJoCo simulator dependencies.")
     from evaluator import Evaluator
 
@@ -162,7 +207,7 @@ def main() -> None:
     num_params = evaluator.num_parameters
     logging.info(f"Controller has {num_params} parameters to optimize.")
 
-    reproducer = TournamentCloneReproducer()
+    reproducer = TopPoolCrossoverReproducer()
 
     if checkpoint_path is not None and os.path.exists(checkpoint_path):
         checkpoint = _load_checkpoint(checkpoint_path)
@@ -250,7 +295,7 @@ def main() -> None:
             for individual, fitness in zip(population, parent_fitnesses)
         ]
 
-        elitism_count = min(getattr(config, "ELITISM_COUNT", 0), len(population))
+        elitism_count = min(getattr(config, "ELITISM_COUNT", 2), len(population))
         elites = [
             Individual(individual.genotype.copy(), individual.fitness)
             for individual in sorted(
@@ -346,7 +391,7 @@ def _checkpoint_path_from_args(argv: list[str]) -> str | None:
     """
     if len(argv) > 2:
         raise SystemExit(
-            "Usage: main.py [checkpoint.pkl]"
+            "Usage: main_v2.py [checkpoint.pkl]"
         )
     if len(argv) == 1:
         return None
@@ -360,7 +405,7 @@ def _save_checkpoint(
     best_ever: Individual,
     training_ball_poses: list[Any],
     rng: np.random.Generator,
-    reproducer: TournamentCloneReproducer,
+    reproducer: TopPoolCrossoverReproducer,
     csv_path: str,
     save_path: str,
     num_params: int,
@@ -402,6 +447,8 @@ def _save_checkpoint(
             "test_file": config.TEST_FILE,
             "population_size": config.POPULATION_SIZE,
             "tournament_size": config.TOURNAMENT_SIZE,
+            "top_selection_fraction": getattr(config, "TOP_SELECTION_FRACTION", 0.5),
+            "elitism_count": getattr(config, "ELITISM_COUNT", 2),
             "num_generations": config.NUM_GENERATIONS,
             "num_training_ball_poses": config.NUM_TRAINING_BALL_POSES,
             "min_training_ball_distance_fraction": getattr(
@@ -412,7 +459,6 @@ def _save_checkpoint(
             "simulation_time": config.SIMULATION_TIME,
             "mutate_std": config.MUTATE_STD,
             "mutation_probability": config.MUTATION_PROBABILITY,
-            "elitism_count": getattr(config, "ELITISM_COUNT", 0),
         },
     }
     temp_path = f"{checkpoint_path}.tmp"
@@ -431,7 +477,7 @@ def _save_generation_snapshot(
     population: list[Individual],
     training_ball_poses: list[Any],
     rng: np.random.Generator,
-    reproducer: TournamentCloneReproducer,
+    reproducer: TopPoolCrossoverReproducer,
     best_parent_fitness: float,
     best_offspring_fitness: float,
     best_ever: Individual,
@@ -718,6 +764,8 @@ def _config_values() -> dict[str, Any]:
         "parameter_filename": config.parameter_filename(),
         "population_size": config.POPULATION_SIZE,
         "tournament_size": config.TOURNAMENT_SIZE,
+        "top_selection_fraction": getattr(config, "TOP_SELECTION_FRACTION", 0.5),
+        "elitism_count": getattr(config, "ELITISM_COUNT", 2),
         "num_generations": config.NUM_GENERATIONS,
         "num_training_ball_poses": config.NUM_TRAINING_BALL_POSES,
         "min_training_ball_distance_fraction": getattr(
@@ -742,7 +790,6 @@ def _config_values() -> dict[str, Any]:
         "simulation_time": config.SIMULATION_TIME,
         "mutate_std": config.MUTATE_STD,
         "mutation_probability": config.MUTATION_PROBABILITY,
-        "elitism_count": getattr(config, "ELITISM_COUNT", 0),
         "num_simulators": config.NUM_SIMULATORS,
         "headless": config.HEADLESS,
         "ball_radius": config.BALL_RADIUS,

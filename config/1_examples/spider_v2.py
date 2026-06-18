@@ -1,4 +1,4 @@
-"""Test HPC configuration for the spider ball-approach EA experiment."""
+"""V2 EA configuration for the spider ball-approach experiment."""
 
 import math
 import os
@@ -51,13 +51,14 @@ FEEDBACK_DISTANCE_SCALE = math.sqrt(
     + (TERRAIN_SIZE.y / 2.0 - max(BALL_SPAWN_MARGIN, BALL_RADIUS)) ** 2
 )
 NUM_TRAINING_BALL_POSES = 5
-TEST_FILE = "spider_test"
+TEST_FILE = "spider_v2"
 POPULATION_SIZE = 100
 TOURNAMENT_SIZE = 2
+TOP_SELECTION_FRACTION = 0.5
+ELITISM_COUNT = 2
 NUM_GENERATIONS = 100
 MUTATE_STD = 0.15
-MUTATION_PROBABILITY = 0.25
-ELITISM_COUNT = 1
+MUTATION_PROBABILITY = 0.01
 
 SIMULATION_TIME = 1000
 NUM_SIMULATORS = int(os.environ.get("SLURM_NTASKS", "26"))

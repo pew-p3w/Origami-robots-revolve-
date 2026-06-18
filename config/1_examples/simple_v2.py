@@ -1,4 +1,4 @@
-"""Test HPC configuration for the spider ball-approach EA experiment."""
+"""V2 EA configuration for the simple custom-body ball-approach experiment."""
 
 import math
 import os
@@ -31,7 +31,7 @@ def make_body() -> BodyV2:
     return body
 
 
-BODY = spider_v2()
+BODY = make_body()
 TERRAIN_SIZE = Vector2([30.0, 30.0])
 BALL_RADIUS = 0.3
 BALL_MASS = 0.1
@@ -51,13 +51,14 @@ FEEDBACK_DISTANCE_SCALE = math.sqrt(
     + (TERRAIN_SIZE.y / 2.0 - max(BALL_SPAWN_MARGIN, BALL_RADIUS)) ** 2
 )
 NUM_TRAINING_BALL_POSES = 5
-TEST_FILE = "spider_test"
+TEST_FILE = "simple_v2"
 POPULATION_SIZE = 100
 TOURNAMENT_SIZE = 2
+TOP_SELECTION_FRACTION = 0.5
+ELITISM_COUNT = 2
 NUM_GENERATIONS = 100
 MUTATE_STD = 0.15
-MUTATION_PROBABILITY = 0.25
-ELITISM_COUNT = 1
+MUTATION_PROBABILITY = 0.01
 
 SIMULATION_TIME = 1000
 NUM_SIMULATORS = int(os.environ.get("SLURM_NTASKS", "26"))

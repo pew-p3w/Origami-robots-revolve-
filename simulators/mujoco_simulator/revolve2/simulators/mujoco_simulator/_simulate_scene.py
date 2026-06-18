@@ -1,7 +1,6 @@
 import logging
 import math
 
-import cv2
 import mujoco
 import numpy as np
 import numpy.typing as npt
@@ -113,6 +112,8 @@ def simulate_scene(
 
     """Record the scene if we want to record."""
     if record_settings is not None:
+        import cv2
+
         if not viewer.can_record:
             raise ValueError(
                 f"Selected Viewer {type(viewer).__name__} has no functionality to record."

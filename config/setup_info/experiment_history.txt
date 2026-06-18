@@ -1,0 +1,346 @@
+Revolve2 Ball-Approach Experiment History
+=========================================
+
+This note summarizes the main training setups tried so far, the parameters
+used, and the observed behavior. It is intended as memory for future objective
+function and EA discussions.
+
+
+1. Early successful simple run: output/simple/gen37.pkl
+------------------------------------------------------
+
+This is the visually strongest simple-body controller observed so far.
+
+Snapshot:
+- File: output/simple/gen37.pkl
+- Body: simple
+- Generation: 37
+- Number of parameters: 22
+- Fitness scale: raw metres closer to ball, not normalized
+- Snapshot fitness: 2.4704178028639525
+- Best-ever fitness in that run: 2.4704178028639525
+- Later generation 100 current fitness from same run: 1.931071941926723
+
+Config saved in snapshot:
+- TERRAIN_SIZE = 20.0 x 20.0
+- BALL_RADIUS = 0.3
+- BALL_REACHED_DISTANCE = BALL_RADIUS + 0.2 = 0.5
+- FEEDBACK_NUM_INPUTS = 4
+- FEEDBACK_OUTPUT_SCALE = 0.5
+- FEEDBACK_DISTANCE_SCALE = 10.0
+- NUM_TRAINING_BALL_POSES = 5
+- POPULATION_SIZE = 100
+- PARENT_FRACTION = 0.4
+- CROSSOVER_PROBABILITY = 0.8
+- TOURNAMENT_SIZE = 3
+- NUM_GENERATIONS = 100
+- MUTATE_STD = 0.15
+- SIMULATION_TIME = 1000
+- NUM_SIMULATORS = 26 on HPC
+
+Important properties:
+- No minimum training ball distance fraction was present.
+- Ball positions were sampled randomly inside terrain bounds.
+- Fitness was raw distance improvement in metres.
+- The EA used actual parent mating/crossover, not clone-vs-clone crossover.
+- No elitism was present, so the best individual found at generation 37 was not
+  guaranteed to remain in the later current population.
+
+Takeaway:
+- This run suggests that the old combination of smaller terrain, raw distance
+  fitness, actual crossover, and non-saturated distance feedback may have given
+  the robot a clearer search signal.
+
+
+2. Normalized-fitness production runs: simple4, gecko4, spider4
+--------------------------------------------------------------
+
+These were the main HPC runs after normalizing fitness.
+
+Shared setup:
+- Bodies: simple, gecko, spider
+- TERRAIN_SIZE = 30.0 x 30.0
+- BALL_RADIUS = 0.3
+- BALL_REACHED_DISTANCE = BALL_RADIUS * 1.1 = 0.33
+- MIN_TRAINING_BALL_DISTANCE_FRACTION = 0.3
+- Minimum training ball distance = 0.3 * min(terrain size) = 9.0 m
+- FEEDBACK_NUM_INPUTS = 4
+- FEEDBACK_OUTPUT_SCALE = 0.5
+- FEEDBACK_DISTANCE_SCALE = 10.0
+- NUM_TRAINING_BALL_POSES = 5
+- POPULATION_SIZE = 200
+- TOURNAMENT_SIZE = 2
+- NUM_GENERATIONS = 100
+- MUTATE_STD = 0.15
+- MUTATION_PROBABILITY = 0.01
+- SIMULATION_TIME = 1000
+
+Fitness:
+- For each trial:
+  fitness = ReLU(round((initial_distance - final_distance) / initial_distance, 2))
+- The 5 trial scores were averaged.
+- Fitness values are normalized to [0.0, 1.0].
+
+Observed completed results:
+- simple4:
+  - Final current best fitness: 0.234
+  - Peak current best fitness: 0.250 at generation 30
+  - Last-10 current best average: 0.234
+- spider4:
+  - Final current best fitness: 0.678
+  - Peak current best fitness: 0.678 at generation 97
+  - Last-10 current best average: 0.674
+
+Notes:
+- spider4 performed best numerically.
+- Visual behavior still did not convincingly solve general ball following.
+- Worst fitness for spider remained near zero, meaning the whole population did
+  not become robust.
+- Distance feedback likely saturated often because training balls were usually
+  at or above 9 m and FEEDBACK_DISTANCE_SCALE was 10 m.
+
+
+3. Professor-faithful clone tournament reproduction
+---------------------------------------------------
+
+Supervisor-provided reproduction procedure:
+1. Randomly select k=2 genotypes from the population.
+2. Select the one with highest fitness.
+3. Duplicate this genotype.
+4. Perform 1-point crossover with the two clone genotypes.
+5. Randomly select one produced child for the next population.
+6. Repeat until the new population is full.
+
+Implementation consequence:
+- Crossover between two identical clones produces no new recombination.
+- The main source of variation is mutation.
+- With MUTATION_PROBABILITY = 0.01, most children are exact or near-exact clones.
+
+Approximate chance of no mutation per child:
+- simple, 22 params: 0.99^22 ~= 0.80
+- gecko, 33 params: 0.99^33 ~= 0.72
+- spider, 44 params: 0.99^44 ~= 0.64
+
+Takeaway:
+- This setup is faithful to the written instruction, but behaves mostly like
+  mutation-only tournament cloning.
+- It can preserve selected behaviors statistically, but it has weak exploration.
+
+
+4. Test EA variant: *_test runs
+-------------------------------
+
+Purpose:
+- Keep the professor-style clone tournament reproduction.
+- Add a small practical modification to test whether stronger mutation and
+  elitism improve behavior.
+
+Files:
+- main_test.py
+- simple_test.py
+- gecko_test.py
+- spider_test.py
+- simple_test.job
+- gecko_test.job
+- spider_test.job
+
+Config:
+- POPULATION_SIZE = 100
+- TOURNAMENT_SIZE = 2
+- MUTATE_STD = 0.15
+- MUTATION_PROBABILITY = 0.25
+- ELITISM_COUNT = 1
+- NUM_GENERATIONS = 100
+- NUM_TRAINING_BALL_POSES = 5
+- SIMULATION_TIME = 1000
+
+Elitism:
+- The best evaluated parent is copied into the next generation.
+- The remaining POPULATION_SIZE - 1 slots are filled by offspring.
+
+Observed completed results:
+- simple_test:
+  - Final current best fitness: 0.276
+  - Peak current best fitness: 0.276 at generation 95
+  - Last-10 current best average: 0.274
+  - Improved over simple4 numerically.
+- spider_test:
+  - Final current best fitness: 0.536
+  - Peak current best fitness: 0.536 at generation 51
+  - Last-10 current best average: 0.536
+  - Worse than spider4 numerically.
+
+Takeaway:
+- Stronger mutation plus elitism helped simple slightly.
+- It did not solve the main problem.
+- spider_test plateaued early at 0.536.
+- The population still had many poor individuals, with worst fitness often 0.0.
+
+
+5. Current brain feedback
+-------------------------
+
+Brain:
+- BallAwareCpgBrain
+- Parameters = CPG connection weights + steering weights.
+
+Parameter counts:
+- simple: 22
+- gecko: 33
+- spider: 44
+
+Live inputs per active hinge:
+1. sin(angle_error)
+2. cos(angle_error)
+3. clipped normalized distance
+4. bias
+
+Distance input:
+- distance_input = clip(distance / FEEDBACK_DISTANCE_SCALE, 0.0, 1.0)
+- With FEEDBACK_DISTANCE_SCALE = 10.0, any ball distance >= 10 m appears as 1.0.
+
+Concern:
+- Fitness normalization was intended for interpreting/evaluating performance.
+- Brain input normalization is a separate control-design choice.
+- In the 30 x 30 terrain with minimum 9 m training distance, the distance input
+  may saturate frequently and lose useful magnitude information.
+
+
+6. Objective function concerns
+------------------------------
+
+Current normalized objective:
+- Uses only initial and final distance.
+- Per-trial fitness is rounded to 2 decimals before averaging.
+- Negative progress is clamped to 0.0.
+
+Problems:
+- It does not reward closest approach during the simulation.
+- It does not reward reaching the ball earlier.
+- A robot that gets close and then drifts away can score poorly.
+- A robot that moves away and a robot that barely fails can both score 0.0.
+- Rounding before averaging can flatten selection pressure.
+- With only 5 fixed training ball positions, robots may overfit to a compromise
+  direction or favorite region.
+
+Possible improved objective:
+- Remove per-trial rounding.
+- Track closest distance to the ball over the whole trial.
+- Reward final progress and closest-ever progress.
+- Add a success bonus when the ball is reached.
+- Add an early-reaching bonus when the ball is reached sooner.
+
+Example concept:
+- final_progress = clamp((initial_dist - final_dist) / initial_dist, 0, 1)
+- best_progress = clamp((initial_dist - closest_dist) / initial_dist, 0, 1)
+- If reached:
+  fitness = 0.90 + 0.10 * (1 - time_reached / simulation_time)
+- Else:
+  fitness = 0.60 * final_progress + 0.40 * best_progress
+
+
+7. Main hypotheses going forward
+--------------------------------
+
+Most likely issues:
+1. The objective is too sparse/blunt because it only compares start vs end.
+2. The brain distance feedback may saturate too often in the newer 30 x 30
+   terrain setup.
+3. Clone-vs-clone crossover removes useful genetic recombination.
+4. Rounding normalized fitness weakens selection pressure.
+5. Fixed small training-ball sets may allow cramming or compromise-direction
+   behavior.
+
+The simple/gen37 result suggests that useful behavior can appear when the
+training setup gives the EA a clearer signal. The next objective-function
+iteration should preserve interpretability while giving evolution a smoother,
+denser reward path.
+
+
+8. Current objective-function update
+------------------------------------
+
+The objective was changed from per-trial ReLU final progress to a denser
+weighted signal.
+
+Per trial:
+- signed_final_progress = (initial_distance - final_distance) / initial_distance
+- If this value is effectively zero, apply NO_PROGRESS_PENALTY.
+- Moving closer gives a positive value.
+- Moving farther gives a negative value.
+- Staying at the same distance gives a small negative value.
+
+Additional terms:
+- reached_ball_bonus:
+  - 1.0 if the robot reaches BALL_REACHED_DISTANCE at any sampled point.
+  - 0.0 otherwise.
+- time_to_reach_bonus:
+  - Active only when the robot reaches the ball.
+  - Higher when the robot reaches the ball earlier.
+- movement_alignment:
+  - Average cosine alignment between robot movement and direction to the ball.
+  - Moving toward the ball helps slightly.
+  - Moving away hurts slightly.
+  - Sideways movement is near neutral.
+
+Default weights:
+- FITNESS_PROGRESS_WEIGHT = 1.0
+- FITNESS_REACHED_BONUS_WEIGHT = 0.20
+- FITNESS_TIME_TO_REACH_WEIGHT = 0.10
+- FITNESS_ALIGNMENT_WEIGHT = 0.05
+- NO_PROGRESS_PENALTY = 0.01
+- NO_PROGRESS_EPSILON = 1e-6
+
+After all training-ball trials:
+- Trial scores are averaged while still signed.
+- The final genotype fitness is clipped to [0.0, 1.0].
+
+Purpose:
+- Preserve the interpretable normalized fitness range.
+- Keep final progress as the main signal.
+- Add clear success, speed, and directional hints to guide evolution.
+
+
+9. Experimental v2 EA
+---------------------
+
+Reason:
+- The professor-faithful EA is preserved in main.py for integrity.
+- A separate experimental EA was created in main_v2.py to test whether useful
+  recombination and mild elitism improve behavior.
+
+Files:
+- main_v2.py
+- simple_v2.py
+- gecko_v2.py
+- spider_v2.py
+- simple_v2.job
+- gecko_v2.job
+- spider_v2.job
+
+V2 setup:
+- POPULATION_SIZE = 100
+- NUM_GENERATIONS = 100
+- TOURNAMENT_SIZE = 2
+- TOP_SELECTION_FRACTION = 0.5
+- ELITISM_COUNT = 2
+- MUTATE_STD = 0.15
+- MUTATION_PROBABILITY = 0.01
+- NUM_TRAINING_BALL_POSES = 5
+
+Reproduction:
+1. Re-evaluate the current population.
+2. Sort by fitness and keep only the top 50% as the tournament search pool.
+3. Preserve the top 2 individuals unchanged as elites.
+4. For each child slot:
+   - Select parent 1 using tournament selection from the top pool.
+   - Select parent 2 using tournament selection from the same top pool, excluding
+     parent 1 when possible.
+   - Perform 1-point crossover between the two different genotypes.
+   - Randomly choose one of the two crossover children.
+   - Mutate the chosen child gene-wise.
+5. The next population is elites + children.
+
+Important distinction:
+- This intentionally differs from the professor-faithful clone-crossover EA.
+- The baseline remains available in main.py and the original configs.

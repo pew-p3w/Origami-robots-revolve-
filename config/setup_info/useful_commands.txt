@@ -1,0 +1,294 @@
+Useful Commands
+===============
+
+This file collects commands that are repeatedly useful for the Revolve2
+ball-approach experiments.
+
+Assumed local repo:
+
+    /Users/phiwumusangidi/Documents/GitHub/revolve2-folding
+
+Assumed twin repo:
+
+    /Users/phiwumusangidi/Documents/GitHub/Origami-robots-revolve-
+
+Assumed HPC repo:
+
+    /scratch/ngdphi001/revolve2-folding
+
+
+Local basics
+------------
+
+Go to the local repo:
+
+    cd /Users/phiwumusangidi/Documents/GitHub/revolve2-folding
+
+Check changed files:
+
+    git status --short
+
+Compile the main experiment files:
+
+    .venv/bin/python -m py_compile \
+        run.py \
+        examples/1_simulator_basics/1a_simulate_single_robot/evaluator.py \
+        examples/1_simulator_basics/1a_simulate_single_robot/main.py \
+        examples/1_simulator_basics/1a_simulate_single_robot/main_v2.py \
+        examples/1_simulator_basics/1a_simulate_single_robot/main_test.py
+
+
+Local visual tests
+------------------
+
+Test a saved generation snapshot:
+
+    .venv/bin/mjpython run.py -t output/simple_v2/gen50.pkl
+
+Use the custom larger viewer:
+
+    .venv/bin/mjpython run.py -t output/simple_v2/gen50.pkl --viewer custom
+
+Test a body/config with random genes:
+
+    .venv/bin/mjpython run.py --random-test config/1_examples/simple_v2.py --random-test-time 120
+
+Export all generation snapshots in one output folder to generations.csv:
+
+    .venv/bin/python run.py -o output/simple_v2
+
+
+Start a local training run
+--------------------------
+
+Professor-faithful EA:
+
+    .venv/bin/mjpython run.py \
+        -r config/1_examples/simple.py \
+        examples/1_simulator_basics/1a_simulate_single_robot/main.py \
+        output/simple_local
+
+Experimental v2 EA:
+
+    .venv/bin/mjpython run.py \
+        -r config/1_examples/simple_v2.py \
+        examples/1_simulator_basics/1a_simulate_single_robot/main_v2.py \
+        output/simple_v2_local
+
+Continue from a generation snapshot:
+
+    .venv/bin/mjpython run.py -c output/simple_v2/gen25.pkl
+
+
+Sync local repo to the HPC
+--------------------------
+
+Run from your Mac. This syncs code/config/jobs but avoids large or local-only
+folders.
+
+    rsync -av \
+        --exclude '.git/' \
+        --exclude '.venv/' \
+        --exclude 'output/' \
+        --exclude '__pycache__/' \
+        /Users/phiwumusangidi/Documents/GitHub/revolve2-folding/ \
+        ngdphi001@hpc.uct.ac.za:/scratch/ngdphi001/revolve2-folding/
+
+
+Log in to the HPC
+-----------------
+
+    ssh ngdphi001@hpc.uct.ac.za
+
+Go to the HPC repo:
+
+    cd /scratch/ngdphi001/revolve2-folding
+
+Check quota:
+
+    quota
+
+Check jobs:
+
+    squeue -u $USER
+
+
+Submit HPC jobs
+---------------
+
+Submit the professor-faithful jobs:
+
+    sbatch jobs/simple.job
+    sbatch jobs/gecko.job
+    sbatch jobs/spider.job
+
+Submit the experimental v2 jobs:
+
+    sbatch jobs/simple_v2.job
+    sbatch jobs/gecko_v2.job
+    sbatch jobs/spider_v2.job
+
+Submit the previous test-variant jobs:
+
+    sbatch jobs/simple_test.job
+    sbatch jobs/gecko_test.job
+    sbatch jobs/spider_test.job
+
+
+Watch HPC logs
+--------------
+
+Watch stdout:
+
+    tail -f jobs/logs/simple_v2.out
+
+Watch errors:
+
+    tail -f jobs/logs/simple_v2.err
+
+Check latest output files:
+
+    ls -lh output/simple_v2/
+    ls -lh output/gecko_v2/
+    ls -lh output/spider_v2/
+
+Check latest generation number:
+
+    ls output/simple_v2/gen*.pkl | sort -V | tail
+
+
+Stop HPC jobs
+-------------
+
+Cancel one job:
+
+    scancel JOBID
+
+Cancel all your running/queued jobs:
+
+    scancel -u $USER
+
+
+Resume HPC jobs
+---------------
+
+If a run stopped at, for example, gen42:
+
+    python run.py -c output/simple_v2/gen42.pkl
+
+For a Slurm job script, update the final line to point at the generation file:
+
+    python run.py -c output/simple_v2/gen42.pkl
+
+Then submit the job again:
+
+    sbatch jobs/simple_v2.job
+
+
+Pull latest snapshots back from the HPC
+---------------------------------------
+
+Run from your Mac.
+
+Pull an entire output folder:
+
+    rsync -av \
+        ngdphi001@hpc.uct.ac.za:/scratch/ngdphi001/revolve2-folding/output/simple_v2/ \
+        /Users/phiwumusangidi/Documents/GitHub/revolve2-folding/output/simple_v2/
+
+Pull only a specific generation:
+
+    rsync -av \
+        ngdphi001@hpc.uct.ac.za:/scratch/ngdphi001/revolve2-folding/output/simple_v2/gen50.pkl \
+        /Users/phiwumusangidi/Documents/GitHub/revolve2-folding/output/simple_v2/
+
+Pull CSV and latest generation manually:
+
+    rsync -av \
+        ngdphi001@hpc.uct.ac.za:/scratch/ngdphi001/revolve2-folding/output/simple_v2/parameters_simple_v2_run_*.csv \
+        /Users/phiwumusangidi/Documents/GitHub/revolve2-folding/output/simple_v2/
+
+    rsync -av \
+        ngdphi001@hpc.uct.ac.za:/scratch/ngdphi001/revolve2-folding/output/simple_v2/gen100.pkl \
+        /Users/phiwumusangidi/Documents/GitHub/revolve2-folding/output/simple_v2/
+
+
+Pull latest generation for all three v2 bodies
+----------------------------------------------
+
+Run these from your Mac after replacing the generation numbers.
+
+    rsync -av \
+        ngdphi001@hpc.uct.ac.za:/scratch/ngdphi001/revolve2-folding/output/simple_v2/genGEN.pkl \
+        /Users/phiwumusangidi/Documents/GitHub/revolve2-folding/output/simple_v2/
+
+    rsync -av \
+        ngdphi001@hpc.uct.ac.za:/scratch/ngdphi001/revolve2-folding/output/gecko_v2/genGEN.pkl \
+        /Users/phiwumusangidi/Documents/GitHub/revolve2-folding/output/gecko_v2/
+
+    rsync -av \
+        ngdphi001@hpc.uct.ac.za:/scratch/ngdphi001/revolve2-folding/output/spider_v2/genGEN.pkl \
+        /Users/phiwumusangidi/Documents/GitHub/revolve2-folding/output/spider_v2/
+
+
+Sync with the twin repo
+-----------------------
+
+Run from your Mac. This copies the current repo into the twin repo while
+leaving the twin repo's .git folder alone.
+
+    rsync -av \
+        --exclude '.git/' \
+        --exclude '.venv/' \
+        --exclude 'output/' \
+        --exclude '__pycache__/' \
+        /Users/phiwumusangidi/Documents/GitHub/revolve2-folding/ \
+        /Users/phiwumusangidi/Documents/GitHub/Origami-robots-revolve-/
+
+
+Commit to GitHub
+----------------
+
+Check status:
+
+    git status --short
+
+Stage selected files:
+
+    git add run.py
+    git add config/1_examples
+    git add config/setup_info
+    git add examples/1_simulator_basics/1a_simulate_single_robot
+    git add jobs
+
+Commit:
+
+    git commit -m "Update ball approach EA and objective"
+
+Push:
+
+    git push
+
+
+Useful inspection commands
+--------------------------
+
+See recent CSV rows:
+
+    tail -n 20 output/simple_v2/parameters_simple_v2_run_*.csv
+
+List generation files in order:
+
+    ls output/simple_v2/gen*.pkl | sort -V
+
+Find Python/MuJoCo processes on macOS:
+
+    ps aux | rg 'python|mjpython|Python.app|run.py|mujoco|MuJoCo'
+
+Kill a stuck process by PID:
+
+    kill PID
+
+Force-kill only if normal kill does not work:
+
+    kill -9 PID

@@ -91,11 +91,11 @@ class Evaluator:
         self, population: list[Genotype], ball_poses: list[Pose]
     ) -> list[float]:
         """
-        Evaluate genotypes on multiple fixed ball poses and average normalized fitness.
+        Evaluate genotypes on fixed ball poses and average signed progress.
 
         :param population: List of genotypes to evaluate.
         :param ball_poses: Shared ball poses to test every genotype on.
-        :returns: Mean normalized fitness per genotype.
+        :returns: Mean normalized fitness per genotype, clamped to [0.0, 1.0].
         :raises ValueError: If no ball poses are provided.
         """
         if len(ball_poses) == 0:
@@ -110,7 +110,8 @@ class Evaluator:
             fitnesses_by_pose.append(
                 self.evaluate(population, ball_pose=ball_pose)
             )
-        return list(np.mean(np.asarray(fitnesses_by_pose), axis=0))
+        mean_progress = np.mean(np.asarray(fitnesses_by_pose), axis=0)
+        return [float(value) for value in np.clip(mean_progress, 0.0, 1.0)]
 
     def evaluate(
         self, population: list[Genotype], ball_pose: Pose | None = None
@@ -120,7 +121,7 @@ class Evaluator:
 
         :param population: List of genotypes to evaluate.
         :param ball_pose: Optional shared ball pose for this evaluation batch.
-        :returns: List of normalized fitness values, one per genotype.
+        :returns: List of signed normalized progress values, one per genotype.
         """
         robots = []
         balls = []
@@ -171,25 +172,163 @@ class Evaluator:
 
         fitnesses = []
         for robot, ball, scene_states in zip(robots, balls, all_scene_states):
-            initial_dist = _robot_to_ball_distance(scene_states[0], robot, ball)
-            final_dist = _robot_to_ball_distance(scene_states[-1], robot, ball)
-            fitnesses.append(_normalized_distance_fitness(initial_dist, final_dist))
+            fitnesses.append(
+                _trial_fitness(
+                    scene_states=scene_states,
+                    robot=robot,
+                    ball=ball,
+                    sampling_frequency=batch_parameters.sampling_frequency,
+                    simulation_time=config.SIMULATION_TIME,
+                )
+            )
 
         return fitnesses
 
 
-def _normalized_distance_fitness(initial_dist: float, final_dist: float) -> float:
+def _trial_fitness(
+    scene_states: list[Any],
+    robot: ModularRobot,
+    ball: Ball,
+    sampling_frequency: float | None,
+    simulation_time: float,
+) -> float:
     """
-    Calculate normalized ReLU distance-improvement fitness for one trial.
+    Calculate weighted trial fitness from progress, reach, speed, and alignment.
+
+    :param scene_states: Sampled scene states for one simulated trial.
+    :param robot: The robot.
+    :param ball: The target ball.
+    :param sampling_frequency: Scene sampling frequency in Hz, if available.
+    :param simulation_time: Maximum simulation time in seconds.
+    :returns: Signed trial fitness before cross-pose averaging and clipping.
+    """
+    initial_dist = _robot_to_ball_distance(scene_states[0], robot, ball)
+    final_dist = _robot_to_ball_distance(scene_states[-1], robot, ball)
+    progress = _signed_distance_progress(initial_dist, final_dist)
+    reached_bonus, time_to_reach_bonus = _reach_bonuses(
+        scene_states=scene_states,
+        robot=robot,
+        ball=ball,
+        sampling_frequency=sampling_frequency,
+        simulation_time=simulation_time,
+    )
+    alignment = _movement_alignment(scene_states, robot, ball)
+
+    return (
+        getattr(config, "FITNESS_PROGRESS_WEIGHT", 1.0) * progress
+        + getattr(config, "FITNESS_REACHED_BONUS_WEIGHT", 0.20) * reached_bonus
+        + getattr(config, "FITNESS_TIME_TO_REACH_WEIGHT", 0.10) * time_to_reach_bonus
+        + getattr(config, "FITNESS_ALIGNMENT_WEIGHT", 0.05) * alignment
+    )
+
+
+def _signed_distance_progress(initial_dist: float, final_dist: float) -> float:
+    """
+    Calculate signed normalized distance progress for one trial.
 
     :param initial_dist: Initial robot-to-ball distance.
     :param final_dist: Final robot-to-ball distance.
-    :returns: Fitness in the range [0.0, 1.0].
+    :returns: Positive if closer, zero if unchanged, negative if farther away.
     """
     if initial_dist <= 0.0:
         return 0.0
-    normalized = round((initial_dist - final_dist) / initial_dist, 2)
-    return min(1.0, max(0.0, normalized))
+    progress = (initial_dist - final_dist) / initial_dist
+    if abs(progress) <= getattr(config, "NO_PROGRESS_EPSILON", 1e-6):
+        return -getattr(config, "NO_PROGRESS_PENALTY", 0.01)
+    return progress
+
+
+def _reach_bonuses(
+    scene_states: list[Any],
+    robot: ModularRobot,
+    ball: Ball,
+    sampling_frequency: float | None,
+    simulation_time: float,
+) -> tuple[float, float]:
+    """
+    Calculate binary reached-ball and speed-to-reach bonuses.
+
+    :param scene_states: Sampled scene states for one simulated trial.
+    :param robot: The robot.
+    :param ball: The target ball.
+    :param sampling_frequency: Scene sampling frequency in Hz, if available.
+    :param simulation_time: Maximum simulation time in seconds.
+    :returns: A tuple of reached bonus and time-to-reach bonus.
+    """
+    for index, scene_state in enumerate(scene_states):
+        distance = _robot_to_ball_distance(scene_state, robot, ball)
+        if distance <= config.BALL_REACHED_DISTANCE:
+            reach_time = _sample_index_to_time(
+                index=index,
+                num_samples=len(scene_states),
+                sampling_frequency=sampling_frequency,
+                simulation_time=simulation_time,
+            )
+            if simulation_time <= 0.0:
+                return 1.0, 1.0
+            return 1.0, max(0.0, min(1.0, 1.0 - reach_time / simulation_time))
+    return 0.0, 0.0
+
+
+def _sample_index_to_time(
+    index: int,
+    num_samples: int,
+    sampling_frequency: float | None,
+    simulation_time: float,
+) -> float:
+    """
+    Approximate sample index as simulation time.
+
+    :param index: Sample index.
+    :param num_samples: Total number of samples.
+    :param sampling_frequency: Scene sampling frequency in Hz, if available.
+    :param simulation_time: Maximum simulation time in seconds.
+    :returns: Approximate simulation time in seconds.
+    """
+    if sampling_frequency is not None and sampling_frequency > 0.0:
+        return index / sampling_frequency
+    if num_samples <= 1:
+        return 0.0
+    return simulation_time * index / (num_samples - 1)
+
+
+def _movement_alignment(
+    scene_states: list[Any],
+    robot: ModularRobot,
+    ball: Ball,
+) -> float:
+    """
+    Calculate average movement alignment toward the ball.
+
+    :param scene_states: Sampled scene states for one simulated trial.
+    :param robot: The robot.
+    :param ball: The target ball.
+    :returns: Mean signed cosine alignment in [-1.0, 1.0].
+    """
+    alignments = []
+    epsilon = getattr(config, "NO_PROGRESS_EPSILON", 1e-6)
+    for previous_state, current_state in zip(scene_states, scene_states[1:]):
+        previous_robot_pos = _robot_position(previous_state, robot)
+        current_robot_pos = _robot_position(current_state, robot)
+        previous_ball_pos = _ball_position(previous_state, ball)
+
+        move_x = current_robot_pos.x - previous_robot_pos.x
+        move_y = current_robot_pos.y - previous_robot_pos.y
+        target_x = previous_ball_pos.x - previous_robot_pos.x
+        target_y = previous_ball_pos.y - previous_robot_pos.y
+
+        move_norm = math.sqrt(move_x**2 + move_y**2)
+        target_norm = math.sqrt(target_x**2 + target_y**2)
+        if move_norm <= epsilon or target_norm <= epsilon:
+            continue
+
+        alignments.append(
+            (move_x * target_x + move_y * target_y) / (move_norm * target_norm)
+        )
+
+    if len(alignments) == 0:
+        return 0.0
+    return float(np.mean(alignments))
 
 
 def _robot_to_ball_distance(scene_state, robot: ModularRobot, ball: Ball) -> float:
@@ -201,11 +340,33 @@ def _robot_to_ball_distance(scene_state, robot: ModularRobot, ball: Ball) -> flo
     :param ball: The ball.
     :returns: Euclidean distance on the xy-plane in metres.
     """
-    robot_pos = scene_state.get_modular_robot_simulation_state(robot).get_pose().position
-    ball_pos = scene_state._simulation_state.get_multi_body_system_pose(ball).position
+    robot_pos = _robot_position(scene_state, robot)
+    ball_pos = _ball_position(scene_state, ball)
     return math.sqrt(
         (robot_pos.x - ball_pos.x) ** 2 + (robot_pos.y - ball_pos.y) ** 2
     )
+
+
+def _robot_position(scene_state, robot: ModularRobot):
+    """
+    Get robot position from a scene state.
+
+    :param scene_state: A SceneSimulationState snapshot.
+    :param robot: The robot.
+    :returns: Robot pose position.
+    """
+    return scene_state.get_modular_robot_simulation_state(robot).get_pose().position
+
+
+def _ball_position(scene_state, ball: Ball):
+    """
+    Get ball position from a scene state.
+
+    :param scene_state: A SceneSimulationState snapshot.
+    :param ball: The ball.
+    :returns: Ball pose position.
+    """
+    return scene_state._simulation_state.get_multi_body_system_pose(ball).position
 
 
 def _copy_pose(pose: Pose) -> Pose:

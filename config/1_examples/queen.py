@@ -1,4 +1,4 @@
-"""Test HPC configuration for the spider ball-approach EA experiment."""
+"""Configuration for the queen v2 ball-approach EA experiment."""
 
 import math
 import os
@@ -7,31 +7,13 @@ from numpy.random import Generator
 from pyrr import Vector3
 
 from revolve2.ci_group import terrains
-from revolve2.ci_group.modular_robots_v2 import gecko_v2, spider_v2
-from revolve2.modular_robot.body import RightAngles
-from revolve2.modular_robot.body.v2 import ActiveHingeV2, BodyV2, BrickV2
+from revolve2.ci_group.modular_robots_v2 import queen_v2
 from revolve2.modular_robot_simulation import Terrain
 from revolve2.simulation.scene import Pose
 from revolve2.simulation.scene.vector2 import Vector2
 
 
-def make_body() -> BodyV2:
-    """
-    Create a simple custom body for the robot.
-
-    :returns: The created body.
-    """
-    body = BodyV2()
-    body.core_v2.left_face.bottom = ActiveHingeV2(RightAngles.DEG_0)
-    body.core_v2.left_face.bottom.attachment = ActiveHingeV2(RightAngles.DEG_0)
-    body.core_v2.left_face.bottom.attachment.attachment = BrickV2(RightAngles.DEG_0)
-    body.core_v2.right_face.bottom = ActiveHingeV2(RightAngles.DEG_0)
-    body.core_v2.right_face.bottom.attachment = ActiveHingeV2(RightAngles.DEG_0)
-    body.core_v2.right_face.bottom.attachment.attachment = BrickV2(RightAngles.DEG_0)
-    return body
-
-
-BODY = spider_v2()
+BODY = queen_v2()
 TERRAIN_SIZE = Vector2([30.0, 30.0])
 BALL_RADIUS = 0.3
 BALL_MASS = 0.1
@@ -51,13 +33,12 @@ FEEDBACK_DISTANCE_SCALE = math.sqrt(
     + (TERRAIN_SIZE.y / 2.0 - max(BALL_SPAWN_MARGIN, BALL_RADIUS)) ** 2
 )
 NUM_TRAINING_BALL_POSES = 5
-TEST_FILE = "spider_test"
-POPULATION_SIZE = 100
+TEST_FILE = "queen"
+POPULATION_SIZE = 200
 TOURNAMENT_SIZE = 2
 NUM_GENERATIONS = 100
 MUTATE_STD = 0.15
-MUTATION_PROBABILITY = 0.25
-ELITISM_COUNT = 1
+MUTATION_PROBABILITY = 0.01
 
 SIMULATION_TIME = 1000
 NUM_SIMULATORS = int(os.environ.get("SLURM_NTASKS", "26"))

@@ -96,10 +96,10 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--viewer",
         choices=("native", "custom"),
-        default="native",
+        default="custom",
         help=(
-            "Viewer to use with -t/--test. 'custom' opens a larger "
-            "screen-sized window on supported systems."
+            "Viewer to use with -t/--test. Defaults to 'custom' for local "
+            "visual tests; use 'native' to force the MuJoCo native viewer."
         ),
     )
     parser.add_argument(
@@ -341,6 +341,7 @@ def _run_test(snapshot_path: Path, viewer_type: str) -> None:
 
     import config
     from ball_aware_brain import BallAwareCpgBrain, steering_parameter_count
+    from evaluator import _trial_fitness
     from revolve2.ci_group.interactive_objects import Ball
     from revolve2.ci_group.simulation_parameters import make_standard_batch_parameters
     from revolve2.experimentation.rng import make_rng_time_seed
@@ -355,6 +356,11 @@ def _run_test(snapshot_path: Path, viewer_type: str) -> None:
         simulate_scenes,
     )
 
+    os.environ.setdefault("MUJOCO_GL", "glfw")
+    logging.info("Importing MuJoCo runtime.")
+    import mujoco
+
+    logging.info(f"MuJoCo runtime imported: {mujoco.__version__}")
     logging.info("Importing MuJoCo simulator.")
     from revolve2.simulators.mujoco_simulator import LocalSimulator
 
@@ -454,9 +460,17 @@ def _run_test(snapshot_path: Path, viewer_type: str) -> None:
     logging.info(f"Final   robot-to-ball distance: {final_dist:.4f} m")
     logging.info(f"Distance improvement:           {initial_dist - final_dist:+.4f} m")
     logging.info(
-        f"Normalized fitness for test:    "
-        f"{_normalized_distance_fitness(initial_dist, final_dist):.4f}"
+        f"Signed distance progress:       "
+        f"{_signed_distance_progress(initial_dist, final_dist, config):+.4f}"
     )
+    weighted_trial_fitness = _trial_fitness(
+        scene_states,
+        robot,
+        ball,
+        batch_parameters.sampling_frequency,
+        config.SIMULATION_TIME,
+    )
+    logging.info(f"Weighted trial fitness:         {weighted_trial_fitness:+.4f}")
     if final_dist <= config.BALL_REACHED_DISTANCE:
         logging.info(
             f"Reached ball threshold:          {config.BALL_REACHED_DISTANCE:.4f} m"
@@ -491,6 +505,7 @@ def _run_random_test(
 
     import config
     from ball_aware_brain import BallAwareCpgBrain, steering_parameter_count
+    from evaluator import _trial_fitness
     from revolve2.ci_group.interactive_objects import Ball
     from revolve2.ci_group.simulation_parameters import make_standard_batch_parameters
     from revolve2.experimentation.rng import make_rng_time_seed
@@ -505,6 +520,11 @@ def _run_random_test(
         simulate_scenes,
     )
 
+    os.environ.setdefault("MUJOCO_GL", "glfw")
+    logging.info("Importing MuJoCo runtime.")
+    import mujoco
+
+    logging.info(f"MuJoCo runtime imported: {mujoco.__version__}")
     logging.info("Importing MuJoCo simulator.")
     from revolve2.simulators.mujoco_simulator import LocalSimulator
 
@@ -596,9 +616,17 @@ def _run_random_test(
     logging.info(f"Final   robot-to-ball distance: {final_dist:.4f} m")
     logging.info(f"Distance improvement:           {initial_dist - final_dist:+.4f} m")
     logging.info(
-        f"Normalized fitness for test:    "
-        f"{_normalized_distance_fitness(initial_dist, final_dist):.4f}"
+        f"Signed distance progress:       "
+        f"{_signed_distance_progress(initial_dist, final_dist, config):+.4f}"
     )
+    weighted_trial_fitness = _trial_fitness(
+        scene_states,
+        robot,
+        ball,
+        batch_parameters.sampling_frequency,
+        simulation_time,
+    )
+    logging.info(f"Weighted trial fitness:         {weighted_trial_fitness:+.4f}")
     if final_dist <= config.BALL_REACHED_DISTANCE:
         logging.info(
             f"Reached ball threshold:          {config.BALL_REACHED_DISTANCE:.4f} m"
@@ -625,18 +653,25 @@ def _install_config_environment(config_path: Path, main_path: Path) -> None:
     sys.modules["config"] = config_module
 
 
-def _normalized_distance_fitness(initial_dist: float, final_dist: float) -> float:
+def _signed_distance_progress(
+    initial_dist: float,
+    final_dist: float,
+    config_module: Any,
+) -> float:
     """
-    Calculate normalized ReLU distance-improvement fitness for one visual test.
+    Calculate signed normalized distance progress for one visual test.
 
     :param initial_dist: Initial robot-to-ball distance.
     :param final_dist: Final robot-to-ball distance.
-    :returns: Fitness in the range [0.0, 1.0].
+    :param config_module: Runtime config module.
+    :returns: Positive if closer, zero if unchanged, negative if farther away.
     """
     if initial_dist <= 0.0:
         return 0.0
-    normalized = round((initial_dist - final_dist) / initial_dist, 2)
-    return min(1.0, max(0.0, normalized))
+    progress = (initial_dist - final_dist) / initial_dist
+    if abs(progress) <= getattr(config_module, "NO_PROGRESS_EPSILON", 1e-6):
+        return -getattr(config_module, "NO_PROGRESS_PENALTY", 0.01)
+    return progress
 
 
 def _export_csv(output_dir: Path) -> None:
