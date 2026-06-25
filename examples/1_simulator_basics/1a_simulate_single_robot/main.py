@@ -24,6 +24,9 @@ CONFIG_PATH_ENV = "REVOLVE2_RUN_CONFIG_PATH"
 MAIN_PATH_ENV = "REVOLVE2_RUN_MAIN_PATH"
 OUTPUT_DIR_ENV = "REVOLVE2_RUN_OUTPUT_DIR"
 
+# Probability that a tournament winner's two clone genotypes are crossed over.
+CROSSOVER_PROBABILITY = 0.80
+
 
 def _load_config_module():
     """
@@ -98,11 +101,16 @@ class TournamentCloneReproducer:
                     k=config.TOURNAMENT_SIZE,
                 )
             ]
-            child1, child2 = Genotype.one_point_crossover(
-                winner.genotype.copy(),
-                winner.genotype.copy(),
-                self._rng,
-            )
+            clone1 = winner.genotype.copy()
+            clone2 = winner.genotype.copy()
+            if self._rng.random() < CROSSOVER_PROBABILITY:
+                child1, child2 = Genotype.one_point_crossover(
+                    clone1,
+                    clone2,
+                    self._rng,
+                )
+            else:
+                child1, child2 = clone1, clone2
             child = child1 if self._rng.random() < 0.5 else child2
             children.append(
                 child.mutate(
@@ -157,6 +165,7 @@ def main() -> None:
     logging.info(f"Controller has {num_params} parameters to optimize.")
 
     reproducer = TournamentCloneReproducer()
+    logging.info(f"Crossover probability: {CROSSOVER_PROBABILITY:.2f}")
 
     if checkpoint_path is not None and os.path.exists(checkpoint_path):
         checkpoint = _load_checkpoint(checkpoint_path)

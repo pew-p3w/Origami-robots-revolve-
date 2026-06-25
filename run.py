@@ -99,7 +99,8 @@ def _parse_args() -> argparse.Namespace:
         default="custom",
         help=(
             "Viewer to use with -t/--test. Defaults to 'custom' for local "
-            "visual tests; use 'native' to force the MuJoCo native viewer."
+            "visual tests. On macOS, 'native' is automatically mapped to "
+            "'custom' unless REVOLVE2_ALLOW_NATIVE_VIEWER=1 is set."
         ),
     )
     parser.add_argument(
@@ -328,6 +329,7 @@ def _run_test(snapshot_path: Path, viewer_type: str) -> None:
     :param snapshot_path: Snapshot pkl path.
     :param viewer_type: MuJoCo viewer implementation to use.
     """
+    viewer_type = _safe_viewer_type(viewer_type)
     print(f"Loading generation snapshot: {snapshot_path}", flush=True)
     snapshot = _load_snapshot(snapshot_path)
     print("Installing snapshot config and module paths...", flush=True)
@@ -489,6 +491,7 @@ def _run_random_test(
     :param viewer_type: MuJoCo viewer implementation to use.
     :param simulation_time: Maximum simulation seconds.
     """
+    viewer_type = _safe_viewer_type(viewer_type)
     main_path = (
         _repo_root()
         / "examples"
@@ -631,6 +634,32 @@ def _run_random_test(
         logging.info(
             f"Reached ball threshold:          {config.BALL_REACHED_DISTANCE:.4f} m"
         )
+
+
+def _safe_viewer_type(viewer_type: str) -> str:
+    """
+    Resolve a requested visual viewer to a stable local viewer.
+
+    The MuJoCo native passive viewer repeatedly hangs during startup/shutdown on
+    macOS in this workflow. Keep the CLI option for explicit debugging, but make
+    normal local tests use the custom GLFW viewer even if `--viewer native` is
+    passed.
+
+    :param viewer_type: Requested viewer type.
+    :returns: Viewer type to actually use.
+    """
+    if (
+        sys.platform == "darwin"
+        and viewer_type == "native"
+        and os.environ.get("REVOLVE2_ALLOW_NATIVE_VIEWER") != "1"
+    ):
+        print(
+            "Native MuJoCo viewer is unstable on macOS here; using custom viewer "
+            "instead. Set REVOLVE2_ALLOW_NATIVE_VIEWER=1 to force native.",
+            flush=True,
+        )
+        return "custom"
+    return viewer_type
 
 
 def _install_config_environment(config_path: Path, main_path: Path) -> None:
