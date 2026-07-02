@@ -17,6 +17,9 @@ import types
 from pathlib import Path
 from typing import Any
 
+# Avoid stale or offloaded .pyc cache files causing long blocking imports on macOS.
+sys.dont_write_bytecode = True
+
 import numpy as np
 
 

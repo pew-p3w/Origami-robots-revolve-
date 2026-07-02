@@ -116,6 +116,7 @@ celerybeat.pid
 
 # Environments
 .env
+.venv/
 
 # Spyder project settings
 .spyderproject
@@ -141,3 +142,6 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 /ci_group/revolve2/ci_group/morphological_novelty_metric/_calculate_novelty.c
+
+# Local training outputs
+output/
