@@ -2,11 +2,11 @@
 
 #SBATCH --account=compsci
 #SBATCH --partition=ada
-#SBATCH --nodes=1 --ntasks=24
-#SBATCH --time=98:00:00
-#SBATCH --job-name="snake"
-#SBATCH --output=jobs/logs/snake.out
-#SBATCH --error=jobs/logs/snake.err
+#SBATCH --nodes=1 --ntasks=25
+#SBATCH --time=100:00:00
+#SBATCH --job-name="spider"
+#SBATCH --output=jobs/logs/spider.out
+#SBATCH --error=jobs/logs/spider.err
 #SBATCH --mail-user=ngdphi001@myuct.ac.za
 #SBATCH --mail-type=BEGIN,END,FAIL
 
@@ -39,4 +39,7 @@ echo "Job ID: ${SLURM_JOB_ID:-unknown}"
 echo "SLURM_NTASKS: ${SLURM_NTASKS:-unknown}"
 echo "Python: $(python --version)"
 
-python run.py -c output/snake/gen36.pkl
+python run.py \
+    -r config/1_examples/spider.py \
+    examples/1_simulator_basics/1a_simulate_single_robot/main.py \
+    output/spider400
